@@ -11,7 +11,6 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://car-doc-client.vercel.app",
       "https://car-doctor-e6c18.web.app",
       "https://car-doctor-e6c18.firebaseapp.com",
     ],
