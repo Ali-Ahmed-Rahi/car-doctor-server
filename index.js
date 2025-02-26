@@ -9,11 +9,12 @@ const port = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173","http://localhost:5174","https://car-doc-client.vercel.app" ],
     credentials: true,
   })
 );
 app.use(express.json());
+app.use(cookieParser());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.qorbzds.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -27,35 +28,64 @@ const client = new MongoClient(uri, {
   },
 });
 
+
+// own middleware
+const logger=(req,res,next)=>{
+  console.log('called',req.host,req.originalUrl);
+  next() 
+}
+
+const verifyToken=async(req,res,next)=>{
+  const token=req.cookies.token;
+  if(!token){
+    return res.status(401).send({Massage:'unauthorized access'})
+  }
+  jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
+    if(err){
+      console.log(err);
+      return res.status(401).send({Massage:'unauthorized Token'})
+    }
+    req.user=decoded
+    next()
+  })
+  
+}
+
 async function run() {
   try {
     // Connect the client to the server	(optional tarting in v4.7)
     await client.connect();
 
-    //////////////////////////////////////////////////////////////
+    ///////////////////////////// json web token /////////////////////////////////
 
     // Jwt token auth
-    app.post("/jwt", async (req, res) => {
+    app.post("/jwt", logger, async (req, res) => {
       const user = req.body;
       console.log(user);
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "1h",
+        expiresIn: "24h",
       });
       res
         .cookie("token", token, {
           httpOnly: true,
-          secure: false,
-          // sameSite:'none'
+          secure: true,
+          sameSite:'none'
         })
         .send({ success: true });
     });
 
+
+    app.post("/logout",async(req,res)=>{
+      const user=req.body;
+      console.log('login out',user);
+      res.clearCookie('token',{maxAge:0}).send({success:true})
+    })
     /////////////////////////////////////////////// Services related API
     
     const serviceCollection = client.db("carDoctor").collection("services");
-    const bookingCollection = client.db("carDoctor").collection("bookings");
+    const bookingCollection = client.db("carDoctor").collection("bookings"); 
 
-    app.get("/services", async (req, res) => {
+    app.get("/services",async (req, res) => {
       const services = await serviceCollection.find().toArray();
       res.send(services);
     });
@@ -65,23 +95,31 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const options = {
-        projection: { title: 1, price: 1, service_id: 1, img: 1 },
+        projection: { title: 1, price: 1, service_id: 1, img: 1 , description: 1 ,facility:1},
       };
       const result = await serviceCollection.findOne(query, options);
       res.send(result);
-    });
+    });  
+
 
     ////////////////////////////// BOOKING  ////////////////////////////
 
     // checkout to get data
-    app.post("/bookings", async (req, res) => {
+    app.post("/bookings", logger, async (req, res) => {
       const booking = req.body;
       const result = await bookingCollection.insertOne(booking);
       res.send(result);
     });
+
     // get data from specific user
-    app.get("/bookings/:email", async (req, res) => {
+    app.get("/bookings/:email", logger,  verifyToken, async (req, res) => {
+      console.log('user in the valid token',req.user);    
+      if (req.user.email !== req.params.email) {
+        return res.status(403).send({ message: "forbidden access" });
+        
+      }
       const email = req.params.email;
+      // console.log('tok tok ',req.cookies.token);
       const query = { email: email };
       const result = await bookingCollection.find(query).toArray();
       res.send(result);
