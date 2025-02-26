@@ -9,7 +9,12 @@ const port = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:5173","http://localhost:5174","https://car-doc-client.vercel.app" ],
+    origin: [
+      "http://localhost:5173",
+      "https://car-doc-client.vercel.app",
+      "https://car-doctor-e6c18.web.app",
+      "https://car-doctor-e6c18.firebaseapp.com",
+    ],
     credentials: true,
   })
 );
@@ -28,28 +33,32 @@ const client = new MongoClient(uri, {
   },
 });
 
-
 // own middleware
-const logger=(req,res,next)=>{
-  console.log('called',req.host,req.originalUrl);
-  next() 
-}
+const logger = (req, res, next) => {
+  console.log("called", req.host, req.originalUrl);
+  next();
+};
 
-const verifyToken=async(req,res,next)=>{
-  const token=req.cookies.token;
-  if(!token){
-    return res.status(401).send({Massage:'unauthorized access'})
+const verifyToken = async (req, res, next) => {
+  const token = req.cookies.token;
+  if (!token) {
+    return res.status(401).send({ Massage: "unauthorized access" });
   }
-  jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
-    if(err){
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
       console.log(err);
-      return res.status(401).send({Massage:'unauthorized Token'})
+      return res.status(401).send({ Massage: "unauthorized Token" });
     }
-    req.user=decoded
-    next()
-  })
-  
-}
+    req.user = decoded;
+    next();
+  });
+};
+
+const cookieOption = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production" ? true : false,
+  sameSite: process.env.NODE_ENV === "production" ? 'none' : 'strict',
+};
 
 async function run() {
   try {
@@ -65,42 +74,40 @@ async function run() {
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "24h",
       });
-      res
-        .cookie("token", token, {
-          httpOnly: true,
-          secure: true,
-          sameSite:'none'
-        })
-        .send({ success: true });
+      res.cookie("token", token,cookieOption).send({ success: true });
     });
 
-
-    app.post("/logout",async(req,res)=>{
-      const user=req.body;
-      console.log('login out',user);
-      res.clearCookie('token',{maxAge:0}).send({success:true})
-    })
+    app.post("/logout", async (req, res) => {
+      const user = req.body;
+      console.log("login out", user);
+      res.clearCookie("token", { ...cookieOption,maxAge: 0 }).send({ success: true });
+    });
     /////////////////////////////////////////////// Services related API
-    
-    const serviceCollection = client.db("carDoctor").collection("services");
-    const bookingCollection = client.db("carDoctor").collection("bookings"); 
 
-    app.get("/services",async (req, res) => {
+    const serviceCollection = client.db("carDoctor").collection("services");
+    const bookingCollection = client.db("carDoctor").collection("bookings");
+
+    app.get("/services", async (req, res) => {
       const services = await serviceCollection.find().toArray();
       res.send(services);
     });
-    
 
     app.get("/services/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const options = {
-        projection: { title: 1, price: 1, service_id: 1, img: 1 , description: 1 ,facility:1},
+        projection: {
+          title: 1,
+          price: 1,
+          service_id: 1,
+          img: 1,
+          description: 1,
+          facility: 1,
+        },
       };
       const result = await serviceCollection.findOne(query, options);
       res.send(result);
-    });  
-
+    });
 
     ////////////////////////////// BOOKING  ////////////////////////////
 
@@ -112,11 +119,10 @@ async function run() {
     });
 
     // get data from specific user
-    app.get("/bookings/:email", logger,  verifyToken, async (req, res) => {
-      console.log('user in the valid token',req.user);    
+    app.get("/bookings/:email", logger, verifyToken, async (req, res) => {
+      console.log("user in the valid token", req.user);
       if (req.user.email !== req.params.email) {
         return res.status(403).send({ message: "forbidden access" });
-        
       }
       const email = req.params.email;
       // console.log('tok tok ',req.cookies.token);
@@ -147,9 +153,6 @@ async function run() {
       const result = await bookingCollection.updateOne(filter, updateDoc);
       res.send(result);
     });
-
-
-
 
     ///////////////////////////////////////////////////////////////////////
 
